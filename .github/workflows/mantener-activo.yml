@@ -1,0 +1,28 @@
+# Mantiene activo el proyecto gratuito de Supabase, que se pausa tras una semana sin uso.
+# Hace una consulta liviana cada tres días.
+#
+# Configuración (una sola vez), en el repositorio de GitHub:
+#   Settings > Secrets and variables > Actions > New repository secret
+#     SUPABASE_URL    → la misma dirección de js/config.js
+#     SUPABASE_CLAVE  → la misma clave pública de js/config.js
+name: Mantener activa la base de datos
+
+on:
+  schedule:
+    - cron: '17 12 */3 * *'   # cada 3 días, 12:17 UTC
+  workflow_dispatch: {}       # permite ejecutarla a mano desde la pestaña Actions
+
+jobs:
+  consulta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Consultar una especie
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_CLAVE: ${{ secrets.SUPABASE_CLAVE }}
+        run: |
+          estado=$(curl -s -o /dev/null -w "%{http_code}" \
+            "$SUPABASE_URL/rest/v1/especies?select=id&limit=1" \
+            -H "apikey: $SUPABASE_CLAVE")
+          echo "Respuesta: $estado"
+          test "$estado" = "200"

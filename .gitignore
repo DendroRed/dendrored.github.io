@@ -1,0 +1,20 @@
+# El esquema se ejecuta una vez en Supabase y no forma parte del sitio.
+# GitHub Pages publica todo lo que esté en el repositorio, así que dejarlo
+# fuera evita servir la estructura de la base como un archivo descargable.
+# Guarda una copia en lugar seguro: es lo que se ejecuta para recrear la base.
+dendrored_esquema.sql
+
+# Copias del LEEME en otros formatos: se desactualizan en cuanto se edita
+# LEEME.md, y tener dos versiones distintas de las instrucciones confunde.
+LEEME.pdf
+
+# Configuración local de herramientas
+.claude/
+
+# Archivos temporales del sistema y de editores
+.Rhistory
+.Rapp.history
+*~
+*.swp
+.DS_Store
+Thumbs.db
