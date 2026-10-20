@@ -54,6 +54,15 @@ El archivo `dendrored_esquema.sql` no va en el repositorio: se ejecuta una vez e
 3. En **Project Settings > API** (o **API Keys**) copia la **Project URL** y la clave **pública** ("publishable" o "anon"). Escríbelas en `js/config.js`.
    **Nunca** pongas en la página la clave secreta ("secret" o "service_role").
 
+### Aplicar una migración
+
+Cuando un cambio toca la base de datos viene en un archivo `migracion_X.Y_….sql`. Son dos pasos, y el orden importa:
+
+1. En el **SQL Editor** de Supabase, pega el archivo completo en una pestaña nueva y presiona **Run**. Las migraciones se pueden ejecutar más de una vez sin problema.
+2. En `index.html`, sube el número del `?v=` en las cuatro líneas `<script src="js/…">` y en la hoja de estilos (`?v=0.4` → `?v=0.5`). Sube el cambio a GitHub.
+
+El segundo paso no es opcional. GitHub Pages le dice al navegador que puede guardar `app.js` durante diez minutos, y una pestaña que quede abierta lo conserva mucho más. Si el `?v=` no cambia, una página vieja sigue pidiéndole a la base columnas que la migración ya eliminó. Eso fue lo que detuvo la primera importación después de la 0.4: el navegador tenía la versión anterior, que buscaba `rol_autor`, y el error era *«column cronologia_autores_1.rol_autor does not exist»*. Si alguna vez te aparece un mensaje así, lo primero es recargar forzando la descarga con **Ctrl+Shift+R**.
+
 ## 2. Publicar la página en GitHub Pages
 
 1. En GitHub crea una **organización** llamada DendroRed (en vez de usar tu cuenta personal, para poder sumar administradores después).
