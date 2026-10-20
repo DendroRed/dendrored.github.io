@@ -789,7 +789,7 @@
       ${est.length ? `<div class="estadisticos">${est.map(([t, v]) => `<div><span>${t}</span><strong>${v}</strong></div>`).join('')}</div>` : ''}
       <dl class="datos">
         ${responsables.length ? `<dt>${responsables.length === 1 ? 'Responsable' : 'Responsables'}</dt><dd>${responsables.join(', ')}</dd>` : ''}
-        ${autores.length ? `<dt>${autores.length === 1 ? 'Autor' : 'Autores'}</dt><dd>${autores.join(', ')}</dd>` : ''}
+        ${autores.length ? `<dt>${autores.length === 1 ? 'Autor' : 'Autores'}${autores.length > 1 ? ' <span class="suave chico" title="Igual que en una publicación: primero quien más aportó a la cronología">(en orden de aporte)</span>' : ''}</dt><dd>${autores.join(', ')}</dd>` : ''}
         ${c.laboratorios ? `<dt>Laboratorio</dt><dd>${esc(c.laboratorios.nombre)}</dd>` : ''}
         ${c.estandarizacion ? `<dt>Estandarización</dt><dd>${esc(c.estandarizacion)}</dd>` : ''}
         ${c.anio_muestreo ? `<dt>Muestreo</dt><dd>${c.anio_muestreo}</dd>` : ''}
