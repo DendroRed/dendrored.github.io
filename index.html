@@ -13,7 +13,7 @@
 
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-  <link rel="stylesheet" href="css/estilos.css">
+  <link rel="stylesheet" href="css/estilos.css?v=0.4">
 </head>
 <body>
   <a class="saltar" href="#contenido">Ir al contenido</a>
@@ -38,9 +38,15 @@
   <script src="https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/coordenadas.js"></script>
-  <script src="js/importador.js"></script>
-  <script src="js/app.js"></script>
+  <!-- El ?v= obliga al navegador a bajar los archivos de nuevo. GitHub Pages
+       los sirve con cache-control de 10 minutos y una pestaña abierta puede
+       conservarlos mucho más, así que sin esto una página vieja sigue
+       hablándole a una base ya migrada. SUBE EL NÚMERO con cada migración
+       (0.4 → 0.5); el número no significa nada por sí mismo, solo tiene que
+       cambiar. -->
+  <script src="js/config.js?v=0.4"></script>
+  <script src="js/coordenadas.js?v=0.4"></script>
+  <script src="js/importador.js?v=0.4"></script>
+  <script src="js/app.js?v=0.4"></script>
 </body>
 </html>

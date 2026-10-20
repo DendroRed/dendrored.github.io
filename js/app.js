@@ -71,6 +71,16 @@
       if (/latitud|longitud/.test(regla)) return 'Las coordenadas están fuera de rango.';
       return 'Algún valor está fuera del rango permitido (' + regla + ').';
     }
+    // La página pide una columna que la base ya no tiene. No es un error de
+    // los datos: el navegador guardó una copia vieja de app.js y quedó
+    // desfasada respecto de la última migración. Pasó con "rol_autor" tras la
+    // 0.4, y el mensaje crudo de Postgres —«column cronologia_autores_1.
+    // rol_autor does not exist»— no insinuaba ni la causa ni la solución.
+    if (codigo === '42703' || codigo === 'PGRST204' || codigo === 'PGRST202' || /schema cache/i.test(m)) {
+      return 'Tu navegador tiene cargada una versión antigua de la página, anterior al último '
+        + 'cambio en la base de datos. Recárgala forzando la descarga: Ctrl+Shift+R '
+        + '(en Mac, Cmd+Shift+R). Si el mensaje persiste, falta aplicar una migración en Supabase.';
+    }
     if (codigo === '42501' || /row-level security/.test(m)) return 'No tienes permiso para hacer esto. Si tu cuenta es nueva, espera a que un administrador la apruebe.';
     if (/Invalid login credentials/i.test(m)) return 'Correo o contraseña incorrectos.';
     if (/Email not confirmed/i.test(m)) return 'Aún no confirmas tu correo. Revisa tu bandeja de entrada.';
@@ -1399,6 +1409,8 @@
       marcarPaso(3);
       $('#paso').innerHTML = `<div class="caja"><p id="g-texto">Guardando…</p><div class="barra-progreso"><div id="g-barra"></div></div></div>`;
       const progreso = (t, p) => { $('#g-texto').textContent = t; $('#g-barra').style.width = Math.round(p * 100) + '%'; };
+      // Declarado afuera para poder deshacer desde el catch.
+      let idImp = null;
       try {
         // Registro de la importación
         const { data: reg, error: er } = await sb.from('importaciones').insert({
@@ -1406,6 +1418,7 @@
           n_filas: imp.lectura.filas.length, asignacion_columnas: Object.assign({ formato_coordenadas: imp.formatoCoord, datum: imp.datum }, imp.asignacion)
         }).select('id').single();
         if (er) throw er;
+        idImp = reg.id;
 
         // El archivo trae nombres; la base guarda identificadores.
         const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -1537,8 +1550,30 @@
       } catch (e) {
         console.error(e);
         estado.cargado = false;
+        // Un archivo entra completo o no entra. Los sitios, las cronologías y
+        // la autoría se guardan en tres pasos, y si falla el último quedaba
+        // una importación a medias: tras la migración 0.4 fallaron los
+        // autores y quedaron 64 sitios y 64 cronologías sin autoría, sin que
+        // nada en pantalla dijera qué había alcanzado a entrar.
+        //
+        // Se borra por importacion_id, que solo marca lo creado en este
+        // intento: los sitios que ya existían antes no se tocan. Las
+        // cronologías van primero porque cuelgan de los sitios.
+        let deshacer = '';
+        if (idImp !== null) {
+          progreso('Deshaciendo lo guardado…', 1);
+          const { error: e1 } = await sb.from('cronologias').delete().eq('importacion_id', idImp);
+          const { error: e2 } = e1 ? { error: null } : await sb.from('sitios').delete().eq('importacion_id', idImp);
+          deshacer = (e1 || e2)
+            ? `<p><strong>Además, no se pudo deshacer lo que ya se había guardado</strong> (${esc(mensajeError(e1 || e2))}).
+               Bórralo en Administrar → Importaciones antes de volver a intentarlo, para no duplicar sitios.</p>`
+            : '<p>No quedó nada a medias: lo que se había guardado se deshizo, así que puedes corregir el problema y volver a importar el mismo archivo.</p>';
+        }
         $('#paso').innerHTML = `<div class="caja"><div class="mensaje error"><p><strong>La importación se detuvo:</strong> ${esc(mensajeError(e))}</p>
-          <p>Lo que alcanzó a guardarse quedó registrado. Revisa <a href="#mis-registros">tus registros</a> antes de volver a intentarlo, para no duplicar sitios.</p></div></div>`;
+          ${deshacer}</div>
+          <p class="fila-botones"><button type="button" class="boton secundario" id="b-otra">Volver a intentar</button></p></div>`;
+        const b = $('#b-otra');
+        if (b) b.addEventListener('click', () => vistaImportar(++turnoVista));
       }
     }
     paso1();
