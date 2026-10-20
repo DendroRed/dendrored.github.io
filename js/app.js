@@ -444,7 +444,7 @@
       especies.map((e) => `<option value="${esc(e.nombre_cientifico)}"${f.especie === e.nombre_cientifico ? ' selected' : ''}>${esc(e.nombre_cientifico)}${e.nombre_comun ? ' (' + esc(e.nombre_comun.split(',')[0]) + ')' : ''}</option>`).join('');
     const regiones = [...new Set(estado.catalogo.map((s) => s.region).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
     $('#f-region').innerHTML = '<option value="">Todas</option>' + regiones.map((r) => `<option${f.region === r ? ' selected' : ''}>${esc(r)}</option>`).join('');
-    const labs = [...new Set(estado.catalogo.map((s) => s.laboratorio).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+    const labs = [...new Set(estado.catalogo.flatMap((s) => (s.laboratorios || '').split('; ').filter(Boolean)))].sort((a, b) => a.localeCompare(b, 'es'));
     $('#f-lab').innerHTML = '<option value="">Todos</option>' + labs.map((r) => `<option${f.laboratorio === r ? ' selected' : ''}>${esc(r)}</option>`).join('');
   }
 
@@ -473,10 +473,11 @@
     const desde = f.desde === '' ? null : Number(f.desde);
     const hasta = f.hasta === '' ? null : Number(f.hasta);
     return estado.catalogo.filter((s) => {
-      if (texto && !I.normalizar([s.codigo, s.nombre, s.comuna, s.region, s.laboratorio, s.especies, s.registrado_por].join(' ')).includes(texto)) return false;
+      if (texto && !I.normalizar([s.codigo, s.nombre, s.comuna, s.region, s.laboratorios, s.especies, s.registrado_por].join(' ')).includes(texto)) return false;
       if (f.especie && !(s.especies || '').split('; ').includes(f.especie)) return false;
       if (f.region && s.region !== f.region) return false;
-      if (f.laboratorio && s.laboratorio !== f.laboratorio) return false;
+      // Coincide tanto con el laboratorio del sitio como con el de cualquiera de sus cronologías.
+      if (f.laboratorio && !(s.laboratorios || '').split('; ').includes(f.laboratorio)) return false;
       if (desde !== null && !(s.anio_inicio !== null && s.anio_inicio <= desde)) return false;
       if (hasta !== null && !(s.anio_fin !== null && s.anio_fin >= hasta)) return false;
       if (f.publica && !s.hay_serie_publica) return false;
@@ -533,7 +534,7 @@
     ['codigo', 'Código'], ['nombre', 'Nombre'], ['region', 'Región'], ['especies', 'Especies'],
     ['n_cronologias', 'Crono.', 'num'], ['anio_inicio', 'Desde', 'num'], ['anio_fin', 'Hasta', 'num'],
     ['latitud', 'Latitud', 'num'], ['longitud', 'Longitud', 'num'], ['altitud_m', 'Altitud', 'num'],
-    ['laboratorio', 'Laboratorio'], ['registrado_por', 'Registrado por']
+    ['laboratorios', 'Laboratorios'], ['registrado_por', 'Registrado por']
   ];
   function pintarTabla(lista) {
     const o = estado.orden;
@@ -545,7 +546,7 @@
         <td><strong>${esc(s.codigo)}</strong></td><td>${esc(s.nombre)}</td><td>${esc(s.region)}</td><td><em>${esc(s.especies)}</em></td>
         <td class="num">${s.n_cronologias}</td><td class="num">${anio(s.anio_inicio)}</td><td class="num">${anio(s.anio_fin)}</td>
         <td class="num">${nf(s.latitud, 4)}</td><td class="num">${nf(s.longitud, 4)}</td><td class="num">${s.altitud_m === null ? '—' : nf(s.altitud_m)}</td>
-        <td>${esc(s.laboratorio)}</td><td>${esc(s.registrado_por)}</td></tr>`).join('')}</tbody></table></div>`;
+        <td>${esc(s.laboratorios)}</td><td>${esc(s.registrado_por)}</td></tr>`).join('')}</tbody></table></div>`;
     $$('th button', z).forEach((b) => b.addEventListener('click', () => {
       o.asc = o.campo === b.dataset.campo ? !o.asc : true;
       o.campo = b.dataset.campo;
@@ -566,7 +567,7 @@
     try {
       const ids = new Set(sitios.map((s) => s.id));
       const cronos = (await traerTodo(() => sb.from('cronologias')
-        .select('*, especies(nombre_cientifico, codigo_itrdb), cronologia_autores(orden, nombre_autor, orcid, rol_autor, perfiles(nombre_completo, orcid))')
+        .select('*, especies(nombre_cientifico, codigo_itrdb), laboratorios(nombre), cronologia_autores(orden, nombre_autor, orcid, rol_autor, perfiles(nombre_completo, orcid))')
         .order('sitio_id').order('codigo'))).filter((c) => ids.has(c.sitio_id));
       const detalle = await traerTodo(() => sb.from('sitios').select('id, comuna, localidad, coord_original, datum_original, ambiente, descripcion, precision'));
       const det = new Map(detalle.map((d) => [d.id, d]));
@@ -583,6 +584,10 @@
       };
       const autoresTexto = (c) => (c.cronologia_autores || []).sort((a, b) => a.orden - b.orden)
         .map((a) => (a.perfiles ? a.perfiles.nombre_completo : a.nombre_autor) || '').filter(Boolean).join('; ');
+      const responsableTexto = (c) => {
+        const r = (c.cronologia_autores || []).find((a) => a.rol_autor === 'responsable');
+        return r ? (r.perfiles ? r.perfiles.nombre_completo : r.nombre_autor) || '' : '';
+      };
       const filaCrono = (c) => ({
         cronologia_codigo: c.codigo, especie: c.especies ? c.especies.nombre_cientifico : null, codigo_itrdb: c.especies ? c.especies.codigo_itrdb : null,
         parametro: ETIQ.parametro[c.parametro], estado: ETIQ.estado[c.estado], anio_inicio: c.anio_inicio, anio_fin: c.anio_fin,
@@ -590,7 +595,9 @@
         intercorrelacion: c.intercorrelacion === null ? null : Number(c.intercorrelacion), sensibilidad_media: c.sensibilidad_media === null ? null : Number(c.sensibilidad_media),
         rbar: c.rbar === null ? null : Number(c.rbar), eps: c.eps === null ? null : Number(c.eps),
         estandarizacion: c.estandarizacion, disponibilidad_serie: ETIQ.disponibilidadCorta[c.disponibilidad], enlace_serie: c.enlace_serie,
-        doi: c.doi, cita: c.cita, autores: autoresTexto(c)
+        doi: c.doi, cita: c.cita,
+        laboratorio_cronologia: c.laboratorios ? c.laboratorios.nombre : null,
+        responsable: responsableTexto(c), autores: autoresTexto(c)
       });
 
       if (formato === 'geojson') {
@@ -667,7 +674,7 @@
       return;
     }
     const { data: cronos, error: e2 } = await sb.from('cronologias')
-      .select('*, especies(nombre_cientifico, nombre_comun, codigo_itrdb), perfiles(nombre_completo), cronologia_autores(orden, nombre_autor, orcid, rol_autor, perfil_id, perfiles(nombre_completo, orcid))')
+      .select('*, especies(nombre_cientifico, nombre_comun, codigo_itrdb), perfiles(nombre_completo), laboratorios(nombre), cronologia_autores(orden, nombre_autor, orcid, rol_autor, perfil_id, perfiles(nombre_completo, orcid))')
       .eq('sitio_id', id).order('codigo');
     if (e2) throw e2;
     if (!vigente(turno)) return;
@@ -775,6 +782,7 @@
       ${est.length ? `<div class="estadisticos">${est.map(([t, v]) => `<div><span>${t}</span><strong>${v}</strong></div>`).join('')}</div>` : ''}
       <dl class="datos">
         ${autores.length ? `<dt>Autores</dt><dd>${autores.join(', ')}</dd>` : ''}
+        ${c.laboratorios ? `<dt>Laboratorio</dt><dd>${esc(c.laboratorios.nombre)}</dd>` : ''}
         ${c.estandarizacion ? `<dt>Estandarización</dt><dd>${esc(c.estandarizacion)}</dd>` : ''}
         ${c.anio_muestreo ? `<dt>Muestreo</dt><dd>${c.anio_muestreo}</dd>` : ''}
         <dt>Serie de tiempo</dt><dd>${serie}</dd>
@@ -1079,8 +1087,11 @@
             <div class="ancho-total"><label for="c-notas">Notas</label><textarea id="c-notas">${val('notas')}</textarea></div>
           </div>
         </fieldset>
-        <fieldset><legend>Autores</legend>
-          <p class="ayuda" style="margin-top:-.5rem;margin-bottom:.6rem">En el orden en que deben citarse. Si la persona tiene cuenta, elige su nombre de la lista y se vinculará a su perfil.</p>
+        <fieldset><legend>Autoría</legend>
+          <div class="rejilla" style="margin-bottom:.9rem"><div><label for="c-lab">Laboratorio</label>
+            <select id="c-lab"><option value="">Sin laboratorio</option>${estado.laboratorios.map((l) => `<option value="${l.id}"${l.id === c.laboratorio_id ? ' selected' : ''}>${esc(l.nombre)}</option>`).join('')}</select>
+            <span class="ayuda">La institución que desarrolló esta cronología, si es distinta de la que muestreó el sitio</span></div></div>
+          <p class="ayuda" style="margin-bottom:.6rem">Autores en el orden en que deben citarse. Si la persona tiene cuenta, elige su nombre de la lista y se vinculará a su perfil.</p>
           <div class="tabla-envoltura"><table class="autores-tabla"><thead><tr><th>Nombre</th><th>ORCID (opcional)</th><th>Rol</th><th><span class="saltar">Acciones</span></th></tr></thead><tbody id="autores"></tbody></table></div>
           <datalist id="l-perfiles">${estado.perfilesPublicos.map((p) => `<option value="${esc(p.nombre_completo)}">`).join('')}</datalist>
           <p style="margin-top:.6rem"><button type="button" class="boton secundario chico" id="b-autor">Agregar autor</button></p>
@@ -1142,7 +1153,8 @@
         n_arboles: ent('n_arboles'), n_radios: ent('n_radios'),
         intercorrelacion: ent('intercorrelacion'), sensibilidad_media: ent('sensibilidad_media'), rbar: ent('rbar'), eps: ent('eps'),
         estandarizacion: vacioANulo($('#c-estandarizacion').value), disponibilidad: $('#c-disponibilidad').value,
-        enlace_serie: vacioANulo($('#c-enlace').value), doi: vacioANulo($('#c-doi').value), cita: vacioANulo($('#c-cita').value), notas: vacioANulo($('#c-notas').value)
+        enlace_serie: vacioANulo($('#c-enlace').value), doi: vacioANulo($('#c-doi').value), cita: vacioANulo($('#c-cita').value), notas: vacioANulo($('#c-notas').value),
+        laboratorio_id: $('#c-lab').value ? Number($('#c-lab').value) : null
       };
       const esNueva = $('#c-especie').value === 'nueva';
       if (!$('#c-especie').value) errores.push('Elige la especie.');
@@ -1374,16 +1386,58 @@
         }).select('id').single();
         if (er) throw er;
 
+        // El archivo trae nombres; la base guarda identificadores.
+        const norm = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const labPorNombre = new Map();
+        estado.laboratorios.forEach((l) => {
+          labPorNombre.set(norm(l.nombre), l.id);
+          if (l.institucion) labPorNombre.set(norm(l.institucion), l.id);
+        });
+        const labsDesconocidos = new Set();
+        // undefined = la fila no trae laboratorio; null = lo trae pero no se reconoce.
+        const idLab = (texto) => {
+          if (!texto) return undefined;
+          const id = labPorNombre.get(norm(texto));
+          if (!id) { labsDesconocidos.add(texto); return null; }
+          return id;
+        };
+        const { data: listaPerfiles } = await sb.from('perfiles').select('id, nombre_completo');
+        const perfilPorNombre = new Map((listaPerfiles || [])
+          .filter((p) => p.nombre_completo).map((p) => [norm(p.nombre_completo), p.id]));
+
+        // "Pérez, J.; Soto, M." → el responsable primero y los colaboradores
+        // después, en el orden del archivo. Separador ";" o "|", nunca la coma,
+        // porque los nombres suelen llevarla. Si el nombre coincide con un
+        // perfil registrado se vincula a su cuenta; si no, queda como texto.
+        const autoresDeTextos = (resp, otros) => {
+          const partir = (t) => String(t || '').split(/\s*[;|]\s*/).map((x) => x.trim()).filter(Boolean);
+          const lista = [];
+          partir(resp).slice(0, 1).forEach((n) => lista.push({ nombre: n, rol_autor: 'responsable' }));
+          partir(otros).forEach((n) => {
+            if (!lista.some((a) => norm(a.nombre) === norm(n))) lista.push({ nombre: n, rol_autor: 'colaborador' });
+          });
+          if (lista.length && !lista.some((a) => a.rol_autor === 'responsable')) lista[0].rol_autor = 'responsable';
+          return lista.map((a, i) => {
+            const pid = perfilPorNombre.get(norm(a.nombre));
+            return { orden: i + 1, rol_autor: a.rol_autor, perfil_id: pid || null, nombre_autor: pid ? null : a.nombre };
+          });
+        };
+
         // Sitios nuevos (uno por código)
         const red = (x) => imp.aproximadas ? Math.round(x * 100) / 100 : x;
         const nuevos = new Map();
         buenas.filter((f) => !f.existente).forEach((f) => {
           if (!nuevos.has(f.sitio.codigo)) {
-            nuevos.set(f.sitio.codigo, Object.assign({}, f.sitio, {
+            const lab = idLab(f.sitio.laboratorio_texto);
+            const fila = Object.assign({}, f.sitio, {
               latitud: red(f.sitio.latitud), longitud: red(f.sitio.longitud),
               precision: imp.aproximadas ? 'aproximada' : 'exacta', coord_original: imp.aproximadas ? null : f.sitio.coord_original,
-              importacion_id: reg.id, laboratorio_id: estado.perfil.laboratorio_id || null
-            }));
+              importacion_id: reg.id,
+              // Si el archivo no trae laboratorio, se asume el de quien importa.
+              laboratorio_id: lab === undefined ? (estado.perfil.laboratorio_id || null) : lab
+            });
+            delete fila.laboratorio_texto;
+            nuevos.set(f.sitio.codigo, fila);
           }
         });
         const idPorCodigo = new Map(estado.catalogo.map((s) => [s.codigo, s.id]));
@@ -1404,31 +1458,51 @@
           previas.forEach((p) => usados.add(p.sitio_id + '|' + p.codigo));
         }
         const renombradas = [];
+        const autoresPorClave = new Map();   // sitio_id|codigo → filas de cronologia_autores
         const cronos = conCrono.map((f) => {
           const sitio_id = idPorCodigo.get(f.sitio.codigo);
           let codigo = f.crono.codigo, k = 2;
           while (usados.has(sitio_id + '|' + codigo)) codigo = f.crono.codigo + '-' + k++;
           if (codigo !== f.crono.codigo) renombradas.push(f.crono.codigo + ' → ' + codigo);
           usados.add(sitio_id + '|' + codigo);
-          const c = Object.assign({}, f.crono, { sitio_id, codigo, importacion_id: reg.id });
+          autoresPorClave.set(sitio_id + '|' + codigo,
+            autoresDeTextos(f.crono.responsable_texto, f.crono.autores_texto));
+          const lab = idLab(f.crono.laboratorio_texto);
+          const c = Object.assign({}, f.crono, {
+            sitio_id, codigo, importacion_id: reg.id,
+            laboratorio_id: lab === undefined ? null : lab
+          });
           delete c.especie_texto;
+          delete c.laboratorio_texto; delete c.responsable_texto; delete c.autores_texto;
           return c;
         });
         let guardadas = 0;
+        let sinAutoria = 0;
         for (let i = 0; i < cronos.length; i += 200) {
           progreso('Guardando cronologías…', .5 + i / Math.max(cronos.length, 1) * .5);
-          const { data, error } = await sb.from('cronologias').insert(cronos.slice(i, i + 200)).select('id');
+          const { data, error } = await sb.from('cronologias').insert(cronos.slice(i, i + 200)).select('id, sitio_id, codigo');
           if (error) throw error;
           guardadas += data.length;
-          // Quien importa queda como responsable de cada cronología
-          const { error: ea } = await sb.from('cronologia_autores').insert(data.map((d) => ({ cronologia_id: d.id, orden: 1, perfil_id: uid(), rol_autor: 'responsable' })));
-          if (ea) throw ea;
+          // Autores del archivo. Si la fila no trae ninguno, queda como
+          // responsable quien importa, que es lo único que se puede suponer.
+          const filasAutores = [];
+          data.forEach((d) => {
+            const lista = autoresPorClave.get(d.sitio_id + '|' + d.codigo) || [];
+            if (lista.length) lista.forEach((a) => filasAutores.push(Object.assign({ cronologia_id: d.id }, a)));
+            else { sinAutoria++; filasAutores.push({ cronologia_id: d.id, orden: 1, perfil_id: uid(), rol_autor: 'responsable' }); }
+          });
+          if (filasAutores.length) {
+            const { error: ea } = await sb.from('cronologia_autores').insert(filasAutores);
+            if (ea) throw ea;
+          }
         }
         progreso('Listo', 1);
         estado.cargado = false;
         $('#paso').innerHTML = `<div class="caja"><div class="mensaje ok"><p><strong>Importación terminada.</strong> Se guardaron ${plural(listaNuevos.length, 'sitio nuevo', 'sitios nuevos')} y ${plural(guardadas, 'cronología', 'cronologías')}.</p>
           ${renombradas.length ? `<p>Algunos códigos de cronología ya existían y se renombraron: ${renombradas.map(esc).join(', ')}.</p>` : ''}
-          <p>Quedaste como responsable de cada cronología importada. Para agregar coautores, edita cada cronología desde su ficha.</p></div>
+          ${labsDesconocidos.size ? `<p><strong>Laboratorios no reconocidos</strong>, guardados sin laboratorio: ${[...labsDesconocidos].map(esc).join(', ')}. Agrégalos en Administrar → Laboratorios y corrige los registros.</p>` : ''}
+          ${sinAutoria ? `<p><strong>${plural(sinAutoria, 'cronología quedó', 'cronologías quedaron')} contigo como responsable</strong>, porque el archivo no traía las columnas de responsable ni de autores. Si alguna no es tuya, edítala desde su ficha.</p>`
+            : '<p>Los autores se tomaron del archivo. Revisa alguna ficha para confirmar que quedaron como esperabas.</p>'}</div>
           <p class="fila-botones"><a class="boton" href="#mapa">Ver en el mapa</a><a class="boton secundario" href="#mis-registros">Ir a mis registros</a><button type="button" class="boton secundario" id="b-otra">Importar otro archivo</button></p></div>`;
         $('#b-otra').addEventListener('click', () => vistaImportar(++turnoVista));
       } catch (e) {
@@ -1625,14 +1699,15 @@
     }
     const pestanas = [];
     if (puede.administrar()) pestanas.push(['cuentas', 'Cuentas']);
-    pestanas.push(['laboratorios', 'Laboratorios'], ['especies', 'Especies'], ['historial', 'Historial']);
+    pestanas.push(['laboratorios', 'Laboratorios'], ['especies', 'Especies'], ['importaciones', 'Importaciones'], ['historial', 'Historial']);
     const v = mostrar(`<div class="hoja-ancha">
       <div class="encabezado-vista"><div><h1>Administrar</h1></div></div>
       <div class="pestanas" role="tablist">${pestanas.map(([k, t], i) => `<button type="button" role="tab" data-tab="${k}" aria-selected="${i === 0}">${t}</button>`).join('')}</div>
       <div id="admin-panel"></div></div>`, turno);
     const ir = (k) => {
       $$('[data-tab]', v).forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === k)));
-      ({ cuentas: adminCuentas, laboratorios: adminLaboratorios, especies: adminEspecies, historial: adminHistorial })[k]();
+      ({ cuentas: adminCuentas, laboratorios: adminLaboratorios, especies: adminEspecies,
+         importaciones: adminImportaciones, historial: adminHistorial })[k]();
     };
     $$('[data-tab]', v).forEach((b) => b.addEventListener('click', () => ir(b.dataset.tab)));
     ir(pestanas[0][0]);
@@ -1741,6 +1816,82 @@
         if (error) { aviso(mensajeError(error), 'error'); return; }
         estado.cargado = false;
         adminEspecies();
+      });
+    });
+  }
+
+  // Deshacer una importación completa. Borrar 60 sitios de a uno desde su ficha
+  // es inviable, y una importación mal armada (columnas corridas, autoría
+  // equivocada) se arregla antes borrándola y volviéndola a subir.
+  async function adminImportaciones() {
+    const panel = $('#admin-panel');
+    panel.innerHTML = '<p class="suave">Cargando…</p>';
+    let imps, sitios, cronos;
+    try {
+      [imps, sitios, cronos] = await Promise.all([
+        traerTodo(() => sb.from('importaciones').select('*, perfiles(nombre_completo)').order('id', { ascending: false })),
+        traerTodo(() => sb.from('sitios').select('id, importacion_id')),
+        traerTodo(() => sb.from('cronologias').select('id, sitio_id, importacion_id'))
+      ]);
+    } catch (e) { panel.innerHTML = `<div class="mensaje error"><p>${esc(mensajeError(e))}</p></div>`; return; }
+    if (!panel.isConnected) return;
+
+    // Qué sigue existiendo de cada importación, y qué se llevaría de paso:
+    // borrar un sitio arrastra todas sus cronologías, incluso las que otra
+    // persona le agregó después.
+    const resumen = (id) => {
+      const ids = new Set(sitios.filter((s) => s.importacion_id === id).map((s) => s.id));
+      return {
+        sitios: ids.size,
+        cronos: cronos.filter((c) => c.importacion_id === id).length,
+        colateral: cronos.filter((c) => c.importacion_id !== id && ids.has(c.sitio_id)).length
+      };
+    };
+
+    panel.innerHTML = `<p class="suave">Cada importación guarda qué archivo se subió y qué columna fue a qué campo.
+        Borrar sus datos elimina los sitios y las cronologías que creó; el registro de la importación queda como constancia.</p>
+      <div class="tabla-envoltura"><table><thead><tr><th>Fecha</th><th>Archivo</th><th>Quién</th>
+        <th class="num">Filas</th><th class="num">Sitios</th><th class="num">Crono.</th><th></th></tr></thead><tbody>
+      ${imps.map((i) => {
+        const r = resumen(i.id);
+        const vacia = !r.sitios && !r.cronos;
+        return `<tr data-imp="${i.id}"><td style="white-space:nowrap">${fechaHora(i.creado_en)}</td>
+          <td>${esc(i.archivo)}<br><span class="suave chico">${esc(i.formato)}</span></td>
+          <td>${esc(i.perfiles ? i.perfiles.nombre_completo : '') || '<span class="suave">—</span>'}</td>
+          <td class="num">${i.n_filas === null ? '—' : nf(i.n_filas)}</td>
+          <td class="num">${nf(r.sitios)}</td><td class="num">${nf(r.cronos)}</td>
+          <td>${vacia
+            ? '<span class="suave chico">Sin datos</span>'
+            : `<button type="button" class="boton peligro chico" data-borrar>Borrar datos</button>${
+                r.colateral ? `<br><span class="suave chico">+${plural(r.colateral, 'cronología ajena', 'cronologías ajenas')}</span>` : ''}`}</td></tr>`;
+      }).join('') || '<tr><td colspan="7" class="suave">Todavía no has importado archivos.</td></tr>'}
+      </tbody></table></div>`;
+
+    $$('[data-imp]', panel).forEach((tr) => {
+      const b = $('[data-borrar]', tr);
+      if (!b) return;
+      const id = Number(tr.dataset.imp);
+      const imp = imps.find((i) => i.id === id);
+      const r = resumen(id);
+      b.addEventListener('click', async () => {
+        const aviso1 = r.colateral
+          ? '\n\nATENCIÓN: ' + plural(r.colateral, 'cronología', 'cronologías') + ' que no viene' + (r.colateral === 1 ? '' : 'n')
+            + ' de esta importación cuelga' + (r.colateral === 1 ? '' : 'n') + ' de estos sitios y también se borrará'
+            + (r.colateral === 1 ? '' : 'n') + '.'
+          : '';
+        if (!confirm('¿Borrar los datos de «' + imp.archivo + '»?\n\nSe borrarán '
+          + plural(r.cronos, 'cronología', 'cronologías') + ' y ' + plural(r.sitios, 'sitio', 'sitios') + '.'
+          + aviso1 + '\n\nEsto no se puede deshacer.')) return;
+        b.disabled = true;
+        // Las cronologías van primero: algunas pueden estar en sitios que ya
+        // existían antes de esta importación y que no hay que borrar.
+        const { error: eC } = await sb.from('cronologias').delete().eq('importacion_id', id);
+        if (eC) { aviso(mensajeError(eC), 'error'); b.disabled = false; return; }
+        const { error: eS } = await sb.from('sitios').delete().eq('importacion_id', id);
+        if (eS) { aviso(mensajeError(eS), 'error'); b.disabled = false; return; }
+        estado.cargado = false;
+        aviso('Datos de la importación borrados');
+        adminImportaciones();
       });
     });
   }

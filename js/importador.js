@@ -30,6 +30,8 @@
     { clave: 'pais', etiqueta: 'País', grupo: 'sitio', sinonimos: ['pais', 'country'] },
     { clave: 'ambiente', etiqueta: 'Ambiente', grupo: 'sitio', sinonimos: ['ambiente', 'habitat', 'tipobosque', 'bosque', 'vegetacion'] },
     { clave: 'descripcion', etiqueta: 'Descripción del sitio', grupo: 'sitio', sinonimos: ['descripcion', 'description', 'comentario', 'obs', 'observaciones'] },
+    { clave: 'laboratorio', etiqueta: 'Laboratorio del sitio', grupo: 'sitio',
+      sinonimos: ['laboratorio', 'lab', 'laboratory', 'institucion', 'universidad', 'centro', 'laboratoriositio'] },
 
     { clave: 'especie', etiqueta: 'Especie', grupo: 'crono',
       sinonimos: ['especie', 'species', 'sp', 'spp', 'taxon', 'codigoespecie', 'speciescode'] },
@@ -59,7 +61,13 @@
     { clave: 'enlace_serie', etiqueta: 'Enlace a la serie', grupo: 'crono', sinonimos: ['enlace', 'link', 'url', 'enlaceserie'] },
     { clave: 'doi', etiqueta: 'DOI', grupo: 'crono', sinonimos: ['doi'] },
     { clave: 'cita', etiqueta: 'Cita', grupo: 'crono', sinonimos: ['cita', 'referencia', 'reference', 'citation', 'publicacion'] },
-    { clave: 'notas', etiqueta: 'Notas de la cronología', grupo: 'crono', sinonimos: ['notas', 'notes', 'nota'] }
+    { clave: 'notas', etiqueta: 'Notas de la cronología', grupo: 'crono', sinonimos: ['notas', 'notes', 'nota'] },
+    { clave: 'laboratorio_crono', etiqueta: 'Laboratorio de la cronología', grupo: 'crono',
+      sinonimos: ['laboratoriocronologia', 'laboratoriocrono', 'labcronologia', 'labcrono', 'institucioncronologia'] },
+    { clave: 'responsable', etiqueta: 'Responsable de la cronología', grupo: 'crono',
+      sinonimos: ['responsable', 'autorprincipal', 'principal', 'contacto', 'encargado', 'pi', 'leadauthor', 'corresponding'] },
+    { clave: 'autores', etiqueta: 'Autores (separados por ;)', grupo: 'crono',
+      sinonimos: ['autores', 'autor', 'authors', 'author', 'coautores', 'colaboradores', 'equipo'] }
   ];
 
   // Los sinónimos se comparan ya normalizados (sin tildes, espacios ni guiones bajos)
@@ -353,7 +361,10 @@
         formato_original: formatoOriginal || null,
         datum_original: datum,
         ambiente: valor(fila, 'ambiente') || null,
-        descripcion: valor(fila, 'descripcion') || null
+        descripcion: valor(fila, 'descripcion') || null,
+        // Nombre tal como viene en el archivo. La app lo traduce a un id de
+        // laboratorio antes de guardar, y lo quita de la fila.
+        laboratorio_texto: valor(fila, 'laboratorio') || null
       };
       const alt = valor(fila, 'altitud_m');
       if (alt !== '') {
@@ -389,7 +400,11 @@
           enlace_serie: valor(fila, 'enlace_serie') || null,
           doi: valor(fila, 'doi') || null,
           cita: valor(fila, 'cita') || null,
-          notas: valor(fila, 'notas') || null
+          notas: valor(fila, 'notas') || null,
+          // Igual que en el sitio: textos que la app resuelve antes de guardar.
+          laboratorio_texto: valor(fila, 'laboratorio_crono') || null,
+          responsable_texto: valor(fila, 'responsable') || null,
+          autores_texto: valor(fila, 'autores') || null
         };
         const p = valor(fila, 'parametro');
         if (p) {

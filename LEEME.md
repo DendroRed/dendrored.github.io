@@ -84,6 +84,7 @@ Supabase pide confirmar el correo al registrarse. El servicio de correo que trae
    - aprobar cuentas y asignar roles (investigador, curador, administrador),
    - agregar laboratorios (los usuarios eligen el suyo en su perfil),
    - corregir especies y sus códigos ITRDB,
+   - deshacer una importación completa (ver más abajo),
    - revisar el historial de cambios.
 
 Para traspasar la administración más adelante, nombra administrador a otra persona desde **Administrar > Cuentas** y agrégala como miembro de las organizaciones de GitHub y Supabase.
@@ -107,6 +108,33 @@ En **Importar** se aceptan CSV o TXT (separados por comas, punto y coma o tabula
 - Coordenadas: grados decimales, grados-minutos-segundos o UTM (zonas 17 a 20 sur), en WGS84, PSAD56 o SAD69. Todo se guarda en WGS84.
 - Antes de guardar se muestran las filas con errores (que no se guardan) y avisos, como sitios a menos de 500 m de otro ya registrado.
 - La `plantilla_importacion.csv` trae filas de ejemplo con todos los campos.
+
+### Autoría al importar
+
+Cuatro columnas deciden a quién se atribuye cada registro. Son opcionales, pero conviene usarlas cuando el archivo incluye trabajo de otras personas:
+
+| Columna | Qué guarda |
+|---|---|
+| `laboratorio` | El laboratorio que muestreó el **sitio** |
+| `laboratorio_crono` | El laboratorio que desarrolló la **cronología**, si es otro |
+| `responsable` | La persona responsable de la cronología |
+| `autores` | Los demás autores, **separados por punto y coma** |
+
+- Los nombres de laboratorio deben coincidir con los de **Administrar → Laboratorios** (no distingue tildes ni mayúsculas, y también acepta el nombre de la institución). Los que no se reconozcan se avisan al terminar y el registro queda sin laboratorio.
+- Si el nombre de un autor coincide con el de una persona registrada, se vincula a su perfil; si no, se guarda como texto.
+- Los autores se guardan en el orden del archivo, con el responsable primero. Si solo pones `autores` y ningún `responsable`, el primero de la lista queda como responsable.
+- **Si el archivo no trae ninguna de estas columnas, quien importa queda como responsable de todas las cronologías y su laboratorio se asigna a todos los sitios.** El resumen final lo advierte.
+
+El filtro de laboratorio del mapa busca en los dos niveles: un sitio aparece si el laboratorio elegido muestreó el sitio **o** desarrolló alguna de sus cronologías.
+
+### Deshacer una importación
+
+En **Administrar → Importaciones** está la lista de archivos subidos, con cuántos sitios y cuántas cronologías sigue teniendo cada uno. **Borrar datos** elimina todo lo que creó esa importación. Sirve cuando un archivo entró con las columnas corridas o con la autoría equivocada: es más rápido corregir el archivo y volver a subirlo que editar decenas de fichas.
+
+- Las cronologías se borran primero, porque algunas pueden estar en sitios que ya existían y que no hay que tocar.
+- Borrar un sitio arrastra **todas** sus cronologías, incluidas las que otra persona le agregó después. Si eso va a pasar, la tabla lo avisa antes (*"+N cronologías ajenas"*) y la confirmación lo repite.
+- El registro de la importación queda en la lista, con 0 sitios y 0 cronologías, como constancia de que se hizo.
+- No se puede deshacer.
 
 ## Coordenadas sensibles
 
