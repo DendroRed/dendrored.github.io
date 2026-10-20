@@ -6,6 +6,7 @@ La página se aloja gratis en GitHub Pages y los datos viven en Supabase.
 - Cualquier persona ve el mapa, filtra, abre las fichas y exporta (Excel, CSV o GeoJSON).
 - Para registrar o editar hay que crear una cuenta, que un administrador aprueba.
 - Cada investigador edita solo lo suyo y puede agregar su cronología a un sitio de otra persona.
+- Cada cronología distingue a su **responsable**, que responde por ella, de sus **autores**, que la cofecharon. Puede ser la misma persona o no.
 - La serie de tiempo no es obligatoria. Si está "a pedido", los usuarios aprobados ven el correo del responsable.
 - Los correos de los usuarios nunca son públicos.
 
@@ -117,13 +118,22 @@ Cuatro columnas deciden a quién se atribuye cada registro. Son opcionales, pero
 |---|---|
 | `laboratorio` | El laboratorio que muestreó el **sitio** |
 | `laboratorio_crono` | El laboratorio que desarrolló la **cronología**, si es otro |
-| `responsable` | La persona responsable de la cronología |
-| `autores` | Los demás autores, **separados por punto y coma** |
+| `responsable` | Quien responde por la cronología |
+| `autores` | Quienes la hicieron, **separados por punto y coma** |
+
+**Responsable y autor no son lo mismo.** El responsable responde por la cronología; el autor es quien la hizo, quien cofechó las muestras. A veces es la misma persona y a veces no, y esa diferencia es un dato:
+
+- Si el responsable **también cofechó**, ponlo en las dos columnas. Queda como responsable y como autor, sin repetirse en la ficha.
+- Si el responsable **solo responde**, no lo pongas en `autores`. La ficha lo mostrará como responsable y nada más.
+- La página no deduce una cosa de la otra. Si dejas `autores` vacía, la cronología queda sin autores, no con el responsable puesto ahí.
+- Si pones `autores` y dejas `responsable` vacía, quedan solo como autores: nadie pasa a ser responsable por estar primero.
+
+Y además:
 
 - Los nombres de laboratorio deben coincidir con los de **Administrar → Laboratorios** (no distingue tildes ni mayúsculas, y también acepta el nombre de la institución). Los que no se reconozcan se avisan al terminar y el registro queda sin laboratorio.
-- Si el nombre de un autor coincide con el de una persona registrada, se vincula a su perfil; si no, se guarda como texto.
-- Los autores se guardan en el orden del archivo, con el responsable primero. Si solo pones `autores` y ningún `responsable`, el primero de la lista queda como responsable.
-- **Si el archivo no trae ninguna de estas columnas, quien importa queda como responsable de todas las cronologías y su laboratorio se asigna a todos los sitios.** El resumen final lo advierte.
+- Si el nombre de una persona coincide con el de una cuenta registrada, se vincula a su perfil; si no, se guarda como texto.
+- El orden del archivo es el orden en que se citan.
+- **Si el archivo no trae ninguna de estas columnas, quien importa queda como responsable de todas las cronologías (no como autor) y su laboratorio se asigna a todos los sitios.** El resumen final lo advierte.
 
 El filtro de laboratorio del mapa busca en los dos niveles: un sitio aparece si el laboratorio elegido muestreó el sitio **o** desarrolló alguna de sus cronologías.
 

@@ -567,7 +567,7 @@
     try {
       const ids = new Set(sitios.map((s) => s.id));
       const cronos = (await traerTodo(() => sb.from('cronologias')
-        .select('*, especies(nombre_cientifico, codigo_itrdb), laboratorios(nombre), cronologia_autores(orden, nombre_autor, orcid, rol_autor, perfiles(nombre_completo, orcid))')
+        .select('*, especies(nombre_cientifico, codigo_itrdb), laboratorios(nombre), cronologia_autores(orden, nombre_autor, orcid, es_responsable, es_autor, perfiles(nombre_completo, orcid))')
         .order('sitio_id').order('codigo'))).filter((c) => ids.has(c.sitio_id));
       const detalle = await traerTodo(() => sb.from('sitios').select('id, comuna, localidad, coord_original, datum_original, ambiente, descripcion, precision'));
       const det = new Map(detalle.map((d) => [d.id, d]));
@@ -582,12 +582,13 @@
           laboratorio: s.laboratorio, registrado_por: s.registrado_por
         };
       };
-      const autoresTexto = (c) => (c.cronologia_autores || []).sort((a, b) => a.orden - b.orden)
-        .map((a) => (a.perfiles ? a.perfiles.nombre_completo : a.nombre_autor) || '').filter(Boolean).join('; ');
-      const responsableTexto = (c) => {
-        const r = (c.cronologia_autores || []).find((a) => a.rol_autor === 'responsable');
-        return r ? (r.perfiles ? r.perfiles.nombre_completo : r.nombre_autor) || '' : '';
-      };
+      // Dos columnas separadas, igual que en la ficha: quien responde por la
+      // cronología y quienes la cofecharon. Puede ser la misma persona.
+      const nombresDe = (c, filtro) => (c.cronologia_autores || []).sort((a, b) => a.orden - b.orden)
+        .filter(filtro).map((a) => (a.perfiles ? a.perfiles.nombre_completo : a.nombre_autor) || '')
+        .filter(Boolean).join('; ');
+      const autoresTexto = (c) => nombresDe(c, (a) => a.es_autor);
+      const responsableTexto = (c) => nombresDe(c, (a) => a.es_responsable);
       const filaCrono = (c) => ({
         cronologia_codigo: c.codigo, especie: c.especies ? c.especies.nombre_cientifico : null, codigo_itrdb: c.especies ? c.especies.codigo_itrdb : null,
         parametro: ETIQ.parametro[c.parametro], estado: ETIQ.estado[c.estado], anio_inicio: c.anio_inicio, anio_fin: c.anio_fin,
@@ -674,7 +675,7 @@
       return;
     }
     const { data: cronos, error: e2 } = await sb.from('cronologias')
-      .select('*, especies(nombre_cientifico, nombre_comun, codigo_itrdb), perfiles(nombre_completo), laboratorios(nombre), cronologia_autores(orden, nombre_autor, orcid, rol_autor, perfil_id, perfiles(nombre_completo, orcid))')
+      .select('*, especies(nombre_cientifico, nombre_comun, codigo_itrdb), perfiles(nombre_completo), laboratorios(nombre), cronologia_autores(orden, nombre_autor, orcid, es_responsable, es_autor, perfil_id, perfiles(nombre_completo, orcid))')
       .eq('sitio_id', id).order('codigo');
     if (e2) throw e2;
     if (!vigente(turno)) return;
@@ -752,11 +753,17 @@
 
   function htmlCronologia(c) {
     const e = c.especies || {};
-    const autores = (c.cronologia_autores || []).sort((a, b) => a.orden - b.orden).map((a) => {
+    // Responsable y autor son cosas distintas: el responsable responde por la
+    // cronología, el autor la cofechó. Se muestran en filas separadas, y quien
+    // sea las dos cosas aparece en las dos.
+    const personas = (c.cronologia_autores || []).sort((a, b) => a.orden - b.orden);
+    const comoTexto = (a) => {
       const nombre = a.perfiles ? a.perfiles.nombre_completo : a.nombre_autor;
       const orcid = (a.perfiles && a.perfiles.orcid) || a.orcid;
       return esc(nombre) + (orcid ? ` <a href="https://orcid.org/${esc(orcid)}" target="_blank" rel="noopener" title="ORCID ${esc(orcid)}" class="chico">ORCID</a>` : '');
-    });
+    };
+    const responsables = personas.filter((a) => a.es_responsable).map(comoTexto);
+    const autores = personas.filter((a) => a.es_autor).map(comoTexto);
     const est = [
       ['Período', periodo(c.anio_inicio, c.anio_fin)], ['EPS ≥ 0,85 desde', anio(c.anio_eps_085)],
       ['Árboles', nf(c.n_arboles)], ['Radios', nf(c.n_radios)],
@@ -765,7 +772,7 @@
     ].filter(([, v]) => v !== '—');
     const enlace = urlSegura(c.enlace_serie);
     const doi = enlaceDOI(c.doi);
-    const responsable = (c.cronologia_autores || []).find((a) => a.rol_autor === 'responsable' && a.perfil_id);
+    const responsable = personas.find((a) => a.es_responsable && a.perfil_id);
     const idContacto = responsable ? responsable.perfil_id : c.creado_por;
     let serie = '<span class="etiqueta ' + (['itrdb', 'repositorio'].includes(c.disponibilidad) ? '' : 'gris') + '">' + ETIQ.disponibilidad[c.disponibilidad] + '</span>';
     if (enlace) serie += ` <a href="${esc(enlace)}" target="_blank" rel="noopener">Abrir la serie</a>`;
@@ -781,7 +788,8 @@
       </div>
       ${est.length ? `<div class="estadisticos">${est.map(([t, v]) => `<div><span>${t}</span><strong>${v}</strong></div>`).join('')}</div>` : ''}
       <dl class="datos">
-        ${autores.length ? `<dt>Autores</dt><dd>${autores.join(', ')}</dd>` : ''}
+        ${responsables.length ? `<dt>${responsables.length === 1 ? 'Responsable' : 'Responsables'}</dt><dd>${responsables.join(', ')}</dd>` : ''}
+        ${autores.length ? `<dt>${autores.length === 1 ? 'Autor' : 'Autores'}</dt><dd>${autores.join(', ')}</dd>` : ''}
         ${c.laboratorios ? `<dt>Laboratorio</dt><dd>${esc(c.laboratorios.nombre)}</dd>` : ''}
         ${c.estandarizacion ? `<dt>Estandarización</dt><dd>${esc(c.estandarizacion)}</dd>` : ''}
         ${c.anio_muestreo ? `<dt>Muestreo</dt><dd>${c.anio_muestreo}</dd>` : ''}
@@ -1033,9 +1041,10 @@
 
     let autores = (c.cronologia_autores || []).sort((a, b) => a.orden - b.orden).map((a) => ({
       perfil_id: a.perfil_id, nombre: a.perfiles ? a.perfiles.nombre_completo : a.nombre_autor,
-      orcid: (a.perfiles && a.perfiles.orcid) || a.orcid || '', rol_autor: a.rol_autor
+      orcid: (a.perfiles && a.perfiles.orcid) || a.orcid || '', es_responsable: a.es_responsable, es_autor: a.es_autor
     }));
-    if (!idCrono) autores = [{ perfil_id: uid(), nombre: estado.perfil.nombre_completo || '', orcid: estado.perfil.orcid || '', rol_autor: 'responsable' }];
+    // Quien crea la cronología a mano normalmente la hizo y responde por ella.
+    if (!idCrono) autores = [{ perfil_id: uid(), nombre: estado.perfil.nombre_completo || '', orcid: estado.perfil.orcid || '', es_responsable: true, es_autor: true }];
 
     const val = (k) => c[k] === null || c[k] === undefined ? '' : esc(c[k]);
     const num = (k, t, extra = '') => `<div><label for="c-${k}">${t}</label><input type="number" id="c-${k}" value="${val(k)}" ${extra}></div>`;
@@ -1091,8 +1100,10 @@
           <div class="rejilla" style="margin-bottom:.9rem"><div><label for="c-lab">Laboratorio</label>
             <select id="c-lab"><option value="">Sin laboratorio</option>${estado.laboratorios.map((l) => `<option value="${l.id}"${l.id === c.laboratorio_id ? ' selected' : ''}>${esc(l.nombre)}</option>`).join('')}</select>
             <span class="ayuda">La institución que desarrolló esta cronología, si es distinta de la que muestreó el sitio</span></div></div>
-          <p class="ayuda" style="margin-bottom:.6rem">Autores en el orden en que deben citarse. Si la persona tiene cuenta, elige su nombre de la lista y se vinculará a su perfil.</p>
-          <div class="tabla-envoltura"><table class="autores-tabla"><thead><tr><th>Nombre</th><th>ORCID (opcional)</th><th>Rol</th><th><span class="saltar">Acciones</span></th></tr></thead><tbody id="autores"></tbody></table></div>
+          <p class="ayuda" style="margin-bottom:.6rem">En el orden en que deben citarse. Si la persona tiene cuenta, elige su nombre de la lista y se vinculará a su perfil.
+            <strong>Responsable</strong> es quien responde por la cronología; <strong>autor</strong>, quien la hizo y cofechó las muestras.
+            Marca las dos casillas cuando sea la misma persona.</p>
+          <div class="tabla-envoltura"><table class="autores-tabla"><thead><tr><th>Nombre</th><th>ORCID (opcional)</th><th>Responsable</th><th>Autor</th><th><span class="saltar">Acciones</span></th></tr></thead><tbody id="autores"></tbody></table></div>
           <datalist id="l-perfiles">${estado.perfilesPublicos.map((p) => `<option value="${esc(p.nombre_completo)}">`).join('')}</datalist>
           <p style="margin-top:.6rem"><button type="button" class="boton secundario chico" id="b-autor">Agregar autor</button></p>
         </fieldset>
@@ -1121,13 +1132,22 @@
       $('#autores').innerHTML = autores.map((a, i) => `<tr>
         <td><input type="text" data-i="${i}" data-k="nombre" list="l-perfiles" value="${esc(a.nombre)}" aria-label="Nombre del autor ${i + 1}"></td>
         <td><input type="text" data-i="${i}" data-k="orcid" value="${esc(a.orcid)}" placeholder="0000-0000-0000-0000" aria-label="ORCID del autor ${i + 1}"${a.perfil_id ? ' readonly title="Viene de su perfil"' : ''}></td>
-        <td><select data-i="${i}" data-k="rol_autor" aria-label="Rol del autor ${i + 1}">${opciones({ responsable: 'Responsable', colaborador: 'Colaborador' }, a.rol_autor)}</select></td>
+        <td class="num"><input type="checkbox" data-i="${i}" data-k="es_responsable"${a.es_responsable ? ' checked' : ''} aria-label="Responsable de la cronología (persona ${i + 1})"></td>
+        <td class="num"><input type="checkbox" data-i="${i}" data-k="es_autor"${a.es_autor ? ' checked' : ''} aria-label="Autor de la cronología (persona ${i + 1})"></td>
         <td style="white-space:nowrap">
           <button type="button" class="boton secundario chico" data-subir="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Subir">↑</button>
           <button type="button" class="boton peligro chico" data-quitar="${i}" aria-label="Quitar">✕</button></td></tr>`).join('');
       $$('#autores [data-k]').forEach((el) => el.addEventListener('change', () => {
         const a = autores[+el.dataset.i];
-        a[el.dataset.k] = el.value;
+        a[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value;
+        // Una persona que no es ni responsable ni autora no tiene por qué estar
+        // en la lista: se devuelve la casilla que acaba de desmarcarse.
+        if (!a.es_responsable && !a.es_autor) {
+          a[el.dataset.k] = true;
+          pintarAutores();
+          aviso('Cada persona tiene que ser responsable, autora, o las dos cosas', 'error');
+          return;
+        }
         if (el.dataset.k === 'nombre') {
           const p = estado.perfilesPublicos.find((x) => x.nombre_completo === el.value.trim());
           a.perfil_id = p ? p.id : null;
@@ -1140,7 +1160,7 @@
         const i = +b.dataset.subir; [autores[i - 1], autores[i]] = [autores[i], autores[i - 1]]; pintarAutores();
       }));
     }
-    $('#b-autor').addEventListener('click', () => { autores.push({ perfil_id: null, nombre: '', orcid: '', rol_autor: 'colaborador' }); pintarAutores(); });
+    $('#b-autor').addEventListener('click', () => { autores.push({ perfil_id: null, nombre: '', orcid: '', es_responsable: false, es_autor: true }); pintarAutores(); });
     pintarAutores();
 
     $('#form-crono').addEventListener('submit', async (e) => {
@@ -1197,7 +1217,8 @@
         if (autoresValidos.length) {
           const { error: ea } = await sb.from('cronologia_autores').insert(autoresValidos.map((a, i) => ({
             cronologia_id: idC, orden: i + 1, perfil_id: a.perfil_id || null,
-            nombre_autor: a.perfil_id ? null : a.nombre.trim(), orcid: a.perfil_id ? null : vacioANulo(a.orcid), rol_autor: a.rol_autor
+            nombre_autor: a.perfil_id ? null : a.nombre.trim(), orcid: a.perfil_id ? null : vacioANulo(a.orcid),
+            es_responsable: !!a.es_responsable, es_autor: !!a.es_autor
           })));
           if (ea) throw ea;
         }
@@ -1405,21 +1426,27 @@
         const perfilPorNombre = new Map((listaPerfiles || [])
           .filter((p) => p.nombre_completo).map((p) => [norm(p.nombre_completo), p.id]));
 
-        // "Pérez, J.; Soto, M." → el responsable primero y los colaboradores
-        // después, en el orden del archivo. Separador ";" o "|", nunca la coma,
-        // porque los nombres suelen llevarla. Si el nombre coincide con un
-        // perfil registrado se vincula a su cuenta; si no, queda como texto.
+        // "Pérez, J.; Soto, M." → el responsable primero y los autores después,
+        // en el orden del archivo. Separador ";" o "|", nunca la coma, porque
+        // los nombres suelen llevarla. Si el nombre coincide con un perfil
+        // registrado se vincula a su cuenta; si no, queda como texto.
+        //
+        // Responder por una cronología y haberla cofechado son cosas
+        // distintas, así que no se deduce una de la otra: el responsable solo
+        // queda como autor si el archivo lo nombra también entre los autores.
         const autoresDeTextos = (resp, otros) => {
           const partir = (t) => String(t || '').split(/\s*[;|]\s*/).map((x) => x.trim()).filter(Boolean);
           const lista = [];
-          partir(resp).slice(0, 1).forEach((n) => lista.push({ nombre: n, rol_autor: 'responsable' }));
+          partir(resp).slice(0, 1).forEach((n) => lista.push({ nombre: n, es_responsable: true, es_autor: false }));
           partir(otros).forEach((n) => {
-            if (!lista.some((a) => norm(a.nombre) === norm(n))) lista.push({ nombre: n, rol_autor: 'colaborador' });
+            const ya = lista.find((a) => norm(a.nombre) === norm(n));
+            if (ya) ya.es_autor = true;   // es responsable y además cofechó
+            else lista.push({ nombre: n, es_responsable: false, es_autor: true });
           });
-          if (lista.length && !lista.some((a) => a.rol_autor === 'responsable')) lista[0].rol_autor = 'responsable';
           return lista.map((a, i) => {
             const pid = perfilPorNombre.get(norm(a.nombre));
-            return { orden: i + 1, rol_autor: a.rol_autor, perfil_id: pid || null, nombre_autor: pid ? null : a.nombre };
+            return { orden: i + 1, es_responsable: a.es_responsable, es_autor: a.es_autor,
+                     perfil_id: pid || null, nombre_autor: pid ? null : a.nombre };
           });
         };
 
@@ -1483,13 +1510,15 @@
           const { data, error } = await sb.from('cronologias').insert(cronos.slice(i, i + 200)).select('id, sitio_id, codigo');
           if (error) throw error;
           guardadas += data.length;
-          // Autores del archivo. Si la fila no trae ninguno, queda como
-          // responsable quien importa, que es lo único que se puede suponer.
+          // Autoría del archivo. Si la fila no trae nada, queda como
+          // responsable quien importa, porque alguien tiene que responder por
+          // la cronología; pero no como autor, porque nada dice que la haya
+          // cofechado. El resumen final avisa para que se corrija.
           const filasAutores = [];
           data.forEach((d) => {
             const lista = autoresPorClave.get(d.sitio_id + '|' + d.codigo) || [];
             if (lista.length) lista.forEach((a) => filasAutores.push(Object.assign({ cronologia_id: d.id }, a)));
-            else { sinAutoria++; filasAutores.push({ cronologia_id: d.id, orden: 1, perfil_id: uid(), rol_autor: 'responsable' }); }
+            else { sinAutoria++; filasAutores.push({ cronologia_id: d.id, orden: 1, perfil_id: uid(), es_responsable: true, es_autor: false }); }
           });
           if (filasAutores.length) {
             const { error: ea } = await sb.from('cronologia_autores').insert(filasAutores);
@@ -1501,8 +1530,8 @@
         $('#paso').innerHTML = `<div class="caja"><div class="mensaje ok"><p><strong>Importación terminada.</strong> Se guardaron ${plural(listaNuevos.length, 'sitio nuevo', 'sitios nuevos')} y ${plural(guardadas, 'cronología', 'cronologías')}.</p>
           ${renombradas.length ? `<p>Algunos códigos de cronología ya existían y se renombraron: ${renombradas.map(esc).join(', ')}.</p>` : ''}
           ${labsDesconocidos.size ? `<p><strong>Laboratorios no reconocidos</strong>, guardados sin laboratorio: ${[...labsDesconocidos].map(esc).join(', ')}. Agrégalos en Administrar → Laboratorios y corrige los registros.</p>` : ''}
-          ${sinAutoria ? `<p><strong>${plural(sinAutoria, 'cronología quedó', 'cronologías quedaron')} contigo como responsable</strong>, porque el archivo no traía las columnas de responsable ni de autores. Si alguna no es tuya, edítala desde su ficha.</p>`
-            : '<p>Los autores se tomaron del archivo. Revisa alguna ficha para confirmar que quedaron como esperabas.</p>'}</div>
+          ${sinAutoria ? `<p><strong>${plural(sinAutoria, 'cronología quedó', 'cronologías quedaron')} contigo como responsable y sin autores</strong>, porque el archivo no traía las columnas de responsable ni de autores. Complétalas desde cada ficha: responder por una cronología no es lo mismo que haberla cofechado.</p>`
+            : '<p>La autoría se tomó del archivo. Revisa alguna ficha para confirmar que el responsable y los autores quedaron como esperabas.</p>'}</div>
           <p class="fila-botones"><a class="boton" href="#mapa">Ver en el mapa</a><a class="boton secundario" href="#mis-registros">Ir a mis registros</a><button type="button" class="boton secundario" id="b-otra">Importar otro archivo</button></p></div>`;
         $('#b-otra').addEventListener('click', () => vistaImportar(++turnoVista));
       } catch (e) {
